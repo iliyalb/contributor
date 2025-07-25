@@ -29,9 +29,11 @@ Use long form flags
 
 ## Command-line Options
 
+- `-v, --version`: Display app version
 - `-r, --repository`: Remote git repository URL
 - `-un, --user_name`: Git user name
 - `-ue, --user_email`: Git user email
+- `-f, --file`: Target file to commit into
 - `-nw, --no_weekends`: Skip weekends
 - `-fr, --frequency`: Percentage of days to commit (0-100)
 - `-db, --days_before`: Days before current date to start
