@@ -15,6 +15,7 @@ type Config struct {
 	repository string
 	userName   string
 	userEmail  string
+	targetFile string
 	noWeekends bool
 	frequency  int
 	daysBefore int
@@ -87,7 +88,7 @@ func main() {
 			commitsToday := contributionsPerDay(config.maxCommits)
 			for j := 0; j < commitsToday; j++ {
 				commitTime := day.Add(time.Duration(j) * time.Minute)
-				contribute(commitTime)
+				contribute(commitTime, config.targetFile)
 			}
 		}
 	}
@@ -102,7 +103,7 @@ func main() {
 	fmt.Printf("\nRepository generation \x1b[6;30;42mcompleted successfully\x1b[0m!\n")
 }
 
-func contribute(date time.Time) {
+func contribute(date time.Time, targetFile string) {
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -110,7 +111,7 @@ func contribute(date time.Time) {
 		return
 	}
 
-	readmePath := filepath.Join(cwd, "README.md")
+	readmePath := filepath.Join(cwd, targetFile)
 
 	// Append to README.md
 	file, err := os.OpenFile(readmePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -154,6 +155,24 @@ func contributionsPerDay(maxCommits int) int {
 	return rand.Intn(maxCommits) + 1
 }
 
+func aliasStringVar(p *string, value string, usage string, names ...string) {
+	for _, name := range names {
+		flag.StringVar(p, name, value, usage)
+	}
+}
+
+func aliasIntVar(p *int, value int, usage string, names ...string) {
+	for _, name := range names {
+		flag.IntVar(p, name, value, usage)
+	}
+}
+
+func aliasBoolVar(p *bool, value bool, usage string, names ...string) {
+	for _, name := range names {
+		flag.BoolVar(p, name, value, usage)
+	}
+}
+
 func parseArgs() Config {
 	// Check for -v or --version before any other processing
 	for _, arg := range os.Args[1:] {
@@ -165,29 +184,15 @@ func parseArgs() Config {
 
 	var config Config
 
-	flag.StringVar(&config.repository, "r", "", "A link to an empty non-initialized remote git repository")
-	flag.StringVar(&config.repository, "repository", "", "A link to an empty non-initialized remote git repository")
-
-	flag.StringVar(&config.userName, "un", "", "Overrides user.name git config")
-	flag.StringVar(&config.userName, "user_name", "", "Overrides user.name git config")
-
-	flag.StringVar(&config.userEmail, "ue", "", "Overrides user.email git config")
-	flag.StringVar(&config.userEmail, "user_email", "", "Overrides user.email git config")
-
-	flag.BoolVar(&config.noWeekends, "nw", false, "Do not commit on weekends")
-	flag.BoolVar(&config.noWeekends, "no_weekends", false, "Do not commit on weekends")
-
-	flag.IntVar(&config.frequency, "fr", 80, "Percentage of days when the script performs commits (default: 80)")
-	flag.IntVar(&config.frequency, "frequency", 80, "Percentage of days when the script performs commits (default: 80)")
-
-	flag.IntVar(&config.daysBefore, "db", 365, "Number of days before current date to start adding commits (default: 365)")
-	flag.IntVar(&config.daysBefore, "days_before", 365, "Number of days before current date to start adding commits (default: 365)")
-
-	flag.IntVar(&config.daysAfter, "da", 0, "Number of days after current date until which commits will be added (default: 0)")
-	flag.IntVar(&config.daysAfter, "days_after", 0, "Number of days after current date until which commits will be added (default: 0)")
-
-	flag.IntVar(&config.maxCommits, "mc", 10, "Maximum number of commits per day (1-20, default: 10)")
-	flag.IntVar(&config.maxCommits, "max_commits", 10, "Maximum number of commits per day (1-20, default: 10)")
+	aliasStringVar(&config.repository, "", "A link to an empty non-initialized remote git repository", "r", "repository")
+	aliasStringVar(&config.userName, "", "Overrides user.name git config", "un", "user_name")
+	aliasStringVar(&config.userEmail, "", "Overrides user.email git config", "ue", "user_email")
+	aliasStringVar(&config.targetFile, "README.md", "The file to write commits into (default: README.md)", "f", "file")
+	aliasBoolVar(&config.noWeekends, false, "Do not commit on weekends", "nw", "no_weekends")
+	aliasIntVar(&config.frequency, 80, "Percentage of days when the script performs commits (default: 80)", "fr", "frequency")
+	aliasIntVar(&config.daysBefore, 365, "Number of days before current date to start adding commits (default: 365)", "db", "days_before")
+	aliasIntVar(&config.daysAfter, 0, "Number of days after current date until which commits will be added (default: 0)", "da", "days_after")
+	aliasIntVar(&config.maxCommits, 10, "Maximum number of commits per day (1-20, default: 10)", "mc", "max_commits")
 
 	// Custom usage message
 	flag.Usage = func() {
