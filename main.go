@@ -216,8 +216,3 @@ func parseArgs() Config {
 
 	return config
 }
-
-func init() {
-	// Seed the random number generator
-	rand.Seed(time.Now().UnixNano())
-}
