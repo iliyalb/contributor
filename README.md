@@ -31,6 +31,7 @@ Use long form flags
 
 - `-v, --version`: Display app version
 - `-r, --repository`: Remote git repository URL
+- `-b, --branch`: Git target branch
 - `-un, --user_name`: Git user name
 - `-ue, --user_email`: Git user email
 - `-f, --file`: Target file to commit into

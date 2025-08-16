@@ -16,6 +16,7 @@ type Config struct {
 	userName   string
 	userEmail  string
 	targetFile string
+	branchName string
 	noWeekends bool
 	frequency  int
 	daysBefore int
@@ -60,7 +61,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	runCommand("git", "init", "-b", "main")
+	runCommand("git", "init", "-b", config.branchName)
 
 	if config.userName != "" {
 		runCommand("git", "config", "user.name", config.userName)
@@ -96,8 +97,8 @@ func main() {
 	// Push to remote repository if specified
 	if config.repository != "" {
 		runCommand("git", "remote", "add", "origin", config.repository)
-		runCommand("git", "branch", "-M", "main")
-		runCommand("git", "push", "-u", "origin", "main")
+		runCommand("git", "checkout", "-B", config.branchName) // create if missing, else switch
+		runCommand("git", "push", "-u", "origin", config.branchName)
 	}
 
 	fmt.Printf("\nRepository generation \x1b[6;30;42mcompleted successfully\x1b[0m!\n")
@@ -188,6 +189,7 @@ func parseArgs() Config {
 	aliasStringVar(&config.userName, "", "Overrides user.name git config", "un", "user_name")
 	aliasStringVar(&config.userEmail, "", "Overrides user.email git config", "ue", "user_email")
 	aliasStringVar(&config.targetFile, "README.md", "The file to write commits into (default: README.md)", "f", "file")
+	aliasStringVar(&config.branchName, "contributor", "The branch to create and commit into (default: contributor)", "b", "branch")
 	aliasBoolVar(&config.noWeekends, false, "Do not commit on weekends", "nw", "no_weekends")
 	aliasIntVar(&config.frequency, 80, "Percentage of days when the script performs commits (default: 80)", "fr", "frequency")
 	aliasIntVar(&config.daysBefore, 365, "Number of days before current date to start adding commits (default: 365)", "db", "days_before")
