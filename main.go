@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -24,7 +25,13 @@ type Config struct {
 	maxCommits int
 }
 
-var version = "v0.2.0"
+type CommitJob struct {
+	date       time.Time
+	targetFile string
+}
+
+var version = "v0.3.1"
+var commitMu sync.Mutex
 
 func main() {
 	config := parseArgs()
@@ -75,36 +82,54 @@ func main() {
 	startDate := time.Date(currDate.Year(), currDate.Month(), currDate.Day(), 20, 0, 0, 0, currDate.Location())
 	startDate = startDate.AddDate(0, 0, -config.daysBefore)
 
-	// Generate commits for the specified date range
-	for i := 0; i < config.daysBefore+config.daysAfter; i++ {
-		day := startDate.AddDate(0, 0, i)
-
-		// Check if we should skip weekends
-		if config.noWeekends && (day.Weekday() == time.Saturday || day.Weekday() == time.Sunday) {
-			continue
-		}
-
-		// Random chance based on frequency
-		if rand.Intn(100) < config.frequency {
-			commitsToday := contributionsPerDay(config.maxCommits)
-			for j := 0; j < commitsToday; j++ {
-				commitTime := day.Add(time.Duration(j) * time.Minute)
-				contribute(commitTime, config.targetFile)
-			}
-		}
+	// Sequential Job Processing
+	jobs := collectCommitJobs(startDate, config)
+	for _, job := range jobs {
+		contribute(job.date, job.targetFile)
 	}
 
 	// Push to remote repository if specified
 	if config.repository != "" {
 		runCommand("git", "remote", "add", "origin", config.repository)
-		runCommand("git", "checkout", "-B", config.branchName) // create if missing, else switch
+		runCommand("git", "checkout", "-B", config.branchName)
 		runCommand("git", "push", "-u", "origin", config.branchName)
 	}
 
 	fmt.Printf("\nRepository generation \x1b[6;30;42mcompleted successfully\x1b[0m!\n")
 }
 
+func collectCommitJobs(startDate time.Time, config Config) []CommitJob {
+	var jobs []CommitJob
+	totalDays := config.daysBefore + config.daysAfter
+
+	for i := 0; i < totalDays; i++ {
+		day := startDate.AddDate(0, 0, i)
+
+		// Skip weekends if requested
+		if config.noWeekends && (day.Weekday() == time.Saturday || day.Weekday() == time.Sunday) {
+			continue
+		}
+
+		// Frequency-based day selection
+		if rand.Intn(100) < config.frequency {
+			commitsToday := contributionsPerDay(config.maxCommits)
+			for j := 0; j < commitsToday; j++ {
+				commitTime := day.Add(time.Duration(j) * time.Minute)
+				jobs = append(jobs, CommitJob{
+					date:       commitTime,
+					targetFile: config.targetFile,
+				})
+			}
+		}
+	}
+	return jobs
+}
+
 func contribute(date time.Time, targetFile string) {
+	// Atomic file writing and committing
+	commitMu.Lock()
+	defer commitMu.Unlock()
+
 	// Get current working directory
 	cwd, err := os.Getwd()
 	if err != nil {
@@ -112,33 +137,51 @@ func contribute(date time.Time, targetFile string) {
 		return
 	}
 
-	readmePath := filepath.Join(cwd, targetFile)
+	targetPath := filepath.Join(cwd, targetFile)
 
-	// Append to README.md
-	file, err := os.OpenFile(readmePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Open and write to the file
+	file, err := os.OpenFile(targetPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Printf("Error opening file: %v\n", err)
+		fmt.Printf("Error opening file %q: %v\n", targetPath, err)
 		return
 	}
-	defer file.Close()
 
 	message := createMessage(date)
 	if _, err := file.WriteString(message + "\n\n"); err != nil {
-		fmt.Printf("Error writing to file: %v\n", err)
+		_ = file.Close() // best effort
+		fmt.Printf("Error writing to file %q: %v\n", targetPath, err)
 		return
 	}
 
-	// Stage and commit changes
-	runCommand("git", "add", ".")
-	runCommand("git", "commit", "-m", message, "--date", date.Format("2006-01-02 15:04:05"))
+	// Flush to disk
+	if err := file.Close(); err != nil {
+		fmt.Printf("Error closing file %q: %v\n", targetPath, err)
+		return
+	}
+
+	// Stage and commit the change
+	if out, err := runCommandWithError("git", "add", "."); err != nil {
+		fmt.Printf("git add failed: %v\nOutput:\n%s\n", err, out)
+		return
+	}
+	if out, err := runCommandWithError("git", "commit", "-m", message, "--date", date.Format("2006-01-02 15:04:05")); err != nil {
+		// Common helpful hint when commit fails (e.g., duplicate timestamps/messages causing nothing to commit)
+		fmt.Printf("git commit failed: %v\nOutput:\n%s\n", err, out)
+		return
+	}
+}
+
+func runCommandWithError(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	// Capture both stdout and stderr
+	out, err := cmd.CombinedOutput()
+	return string(out), err
 }
 
 func runCommand(name string, args ...string) {
-	cmd := exec.Command(name, args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	if err := cmd.Run(); err != nil {
-		fmt.Printf("Error running command '%s %s': %v\n", name, strings.Join(args, " "), err)
+	out, err := runCommandWithError(name, args...)
+	if err != nil {
+		fmt.Printf("Error running command '%s %s': %v\nOutput:\n%s\n", name, strings.Join(args, " "), err, out)
 	}
 }
 
@@ -196,7 +239,6 @@ func parseArgs() Config {
 	aliasIntVar(&config.daysAfter, 0, "Number of days after current date until which commits will be added (default: 0)", "da", "days_after")
 	aliasIntVar(&config.maxCommits, 10, "Maximum number of commits per day (1-20, default: 10)", "mc", "max_commits")
 
-	// Custom usage message
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: %s [options]\n", os.Args[0])
 		fmt.Fprintf(os.Stderr, "\nGitHub Activity Generator - Creates fake commit history\n\n")
